@@ -101,7 +101,7 @@ class Replicator extends EventEmitter {
         .filter(notKnown)
         .forEach(this._addToQueue.bind(this))
 
-      setTimeout(() => this._processQueue(), 0)
+      return this._processQueue()
     } catch (e) {
       console.error(e)
     }
