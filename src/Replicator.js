@@ -124,6 +124,7 @@ class Replicator extends EventEmitter {
 
   async _processQueue () {
     if (this.tasksRunning < this._concurrency) {
+      let _logs = []
       const capacity = this._concurrency - this.tasksRunning
       const items = Object.values(this._queue).slice(0, capacity).filter(notNull)
       items.forEach(entry => delete this._queue[entry.hash || entry])
@@ -136,16 +137,17 @@ class Replicator extends EventEmitter {
           || (this.tasksRunning === 0 && this._buffer.length > 0)) {
             const logs = this._buffer.slice()
             this._buffer = []
-            this.emit('load.end', logs)
+            _logs = logs
         }
 
         if (values.length > 0)
           this.load(values)
       }
 
-      return pMap(items, e => this._processOne(e))
+      await pMap(items, e => this._processOne(e))
         .then(flattenAndGetUniques)
         .then(processValues)
+      return _logs
     }
   }
 

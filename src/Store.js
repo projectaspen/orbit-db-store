@@ -97,28 +97,6 @@ class Store {
         // logger.debug(`<replicate.progress>`)
         this.events.emit('replicate.progress', this.address.toString(), hash, entry, this.replicationStatus.progress, this.replicationStatus.max)
       })
-
-      const onLoadCompleted = async (logs, have) => {
-        try {
-          for (let log of logs) {
-            await this._oplog.join(log)
-          }
-          this._replicationStatus.queued -= logs.length
-          this._replicationStatus.buffered = this._replicator._buffer.length
-          await this._updateIndex()
-
-          //only store heads that has been verified and merges
-          const heads = this._oplog.heads
-          await this._cache.set('_remoteHeads', heads)
-          logger.debug(`Saved heads ${heads.length} [${heads.map(e => e.hash).join(', ')}]`)
-
-          // logger.debug(`<replicated>`)
-          this.events.emit('replicated', this.address.toString(), logs.length)
-        } catch (e) {
-          console.error(e)
-        }
-      }
-      this._replicator.on('load.end', onLoadCompleted)
     } catch (e) {
       console.error("Store Error:", e)
     }
@@ -219,7 +197,7 @@ class Store {
     this.events.emit('ready', this.address.toString(), this._oplog.heads)
   }
 
-  sync (heads) {
+  async sync (heads) {
     this._stats.syncRequestsReceieved += 1
     logger.debug(`Sync request #${this._stats.syncRequestsReceieved} ${heads.length}`)
 
@@ -263,10 +241,30 @@ class Store {
         .then(() => head)
     }
 
-    return mapSeries(heads, saveToIpfs)
-      .then(async (saved) => {
-          return this._replicator.load(saved.filter(e => e !== null))
-      })
+    const onLoadCompleted = async (logs) => {
+      try {
+        for (let log of logs) {
+          await this._oplog.join(log)
+        }
+        this._replicationStatus.queued -= logs.length
+        this._replicationStatus.buffered = this._replicator._buffer.length
+        await this._updateIndex()
+
+        //only store heads that has been verified and merges
+        const heads = this._oplog.heads
+        await this._cache.set('_remoteHeads', heads)
+        logger.debug(`Saved heads ${heads.length} [${heads.map(e => e.hash).join(', ')}]`)
+
+        // logger.debug(`<replicated>`)
+        this.events.emit('replicated', this.address.toString(), logs.length)
+      } catch (e) {
+        console.error(e)
+      }
+    }
+
+    const saved = await mapSeries(heads, saveToIpfs)
+    const logs = await this._replicator.load(saved.filter(e => e !== null))
+    return onLoadCompleted(logs)
   }
 
   loadMoreFrom (amount, entries) {
